@@ -1281,10 +1281,11 @@ get_targets()
 	ST==1 && /^.PHONY : help/ { ST=2 }
 	ST==1 && /echo .\.\.\./ { T=$0; sub(/^[^@]*.echo ...../,"",T); sub(/"$/,"",T); sub(/ .*$/,"",T);
 	  if (is_notgt(T)==0) { printf("%s ",T) } }' $BUILDPATH/Makefile`
-	msg "XTARGETS: $XTARGETS"
+	xmsg "XTARGETS: $XTARGETS"
 
 	TARGETS=
 	TESTS=
+	GPT2=
 	for i in $XTARGETS
 	do
 		case $i in
@@ -1350,6 +1351,34 @@ do_sync()
 	if [ $NOEXEC -eq $RET_FALSE ]; then
 		git reset --hard origin/master
 	fi
+}
+
+# func:get_git_branch ver: 2024.01.07
+# get git branch to VARBRANCH
+# get_git_branch VARBRANCH
+get_git_branch()
+{
+
+	xxmsg "get_git_branch: ARGS:$*"
+
+	local RETCODE VARBRANCH XBRANCH VALBRANCH
+
+	RETCODE=$RET_OK
+
+	# check VARBRANCH
+	if [ x"$1" = x ]; then
+		emsg "get_git_branch: need VARBRANCH, skip"
+		return $ERR_NOARG
+	fi
+	VARBRANCH="$1"
+	xxmsg "get_git_branch: VARBRANCH:$VARBRANCH"
+
+	XBRANCH=`git branch | awk '/^\*/ { print $2 }'`
+	eval $VARBRANCH="$XBRANCH"
+	VALBRANCH=`eval echo '$'${VARBRANCH}`
+	xxmsg "get_git_branch: BRANCH:$XBRANCH $VARBRANCH:$VALBRANCH"
+
+	return $RETCODE
 }
 
 # func:cp_mk_script ver: 2024.01.01
@@ -2425,6 +2454,14 @@ msg "git checkout $BRANCH"
 if [ $NOEXEC -eq $RET_FALSE ]; then
 	git checkout $BRANCH
 fi
+TBRANCH=
+get_git_branch TBRANCH
+xmsg "TBRANCH:$TBRANCH"
+if [ ! $? -eq $RET_OK ]; then
+	die $? "# can't git checkout BRANCH:$BRANCH, exit"
+elif [ ! $TBRANCH = $BRANCH ]; then
+	die $ERR_BADARG "# BRANCH:$TBRANCH: can't git checkout BRANCH:$BRANCH, exit"
+fi
 
 if [ ! -e $DIRNAME ]; then
 	msg "mkdir $DIRNAME"
@@ -2570,7 +2607,7 @@ msg "# duration: $DTTMSEC sec"
 msg "# output file(s):"
 DTTMMIN=`expr $DTTMSEC + 59`
 DTTMMIN=`expr $DTTMMIN / 60`
-EXCLUDE='^'$BUILDPATH'/(CMakeFiles|Testing|data|examples|master|src|tests)/.*'
+EXCLUDE='^'$BUILDPATH'/('$DIRNAME'|CMakeFiles|Testing|data|examples|src|tests)/.*'
 msg "find $BUILDPATH -type f \( -cmin -$DTTMMIN -o -mmin -$DTTMMIN \) -regextype awk -not -regex $EXCLUDE -exec ls -l '{}' \;"
 find $BUILDPATH -type f \( -cmin -$DTTMMIN -o -mmin -$DTTMMIN \) -regextype awk -not -regex $EXCLUDE -exec ls -l '{}' \;
 
