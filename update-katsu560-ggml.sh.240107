@@ -2570,7 +2570,7 @@ msg "# duration: $DTTMSEC sec"
 msg "# output file(s):"
 DTTMMIN=`expr $DTTMSEC + 59`
 DTTMMIN=`expr $DTTMMIN / 60`
-EXCLUDE='^'$BUILDPATH'/(CMakeFiles|Testing|data|examples|srcs|tests)/.*'
+EXCLUDE='^'$BUILDPATH'/(CMakeFiles|Testing|data|examples|master|src|tests)/.*'
 msg "find $BUILDPATH -type f \( -cmin -$DTTMMIN -o -mmin -$DTTMMIN \) -regextype awk -not -regex $EXCLUDE -exec ls -l '{}' \;"
 find $BUILDPATH -type f \( -cmin -$DTTMMIN -o -mmin -$DTTMMIN \) -regextype awk -not -regex $EXCLUDE -exec ls -l '{}' \;
 
