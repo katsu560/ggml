@@ -192,34 +192,34 @@ bool dollyv2_model_load(const std::string & fname, dollyv2_model & model, gpt_vo
         const int n_ctx   = hparams.n_ctx;
         const int n_vocab = hparams.n_vocab;
 
-        ctx_size += n_embd*ggml_type_sizef(GGML_TYPE_F32); // ln_f_g
-        ctx_size += n_embd*ggml_type_sizef(GGML_TYPE_F32); // ln_f_b
+        ctx_size += ggml_row_size(GGML_TYPE_F32, n_embd); // ln_f_g
+        ctx_size += ggml_row_size(GGML_TYPE_F32, n_embd); // ln_f_b
 
-        ctx_size += n_embd*n_vocab*ggml_type_sizef(wtype); // wte
+        ctx_size += ggml_row_size(wtype, n_embd*n_vocab); // wte
 
-        ctx_size += n_embd*n_vocab*ggml_type_sizef(wtype);           // lmh_g
-        //ctx_size +=        n_vocab*ggml_type_sizef(GGML_TYPE_F32); // lmh_b
+        ctx_size += ggml_row_size(wtype, n_embd*n_vocab); // lmh_g
+        //ctx_size += ggml_row_size(GGML_TYPE_F32, n_vocab); // lmh_b
 
-        ctx_size += n_layer*(n_embd*ggml_type_sizef(GGML_TYPE_F32)); // ln_1_g
-        ctx_size += n_layer*(n_embd*ggml_type_sizef(GGML_TYPE_F32)); // ln_1_b
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_g
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_b
 
-        ctx_size += n_layer*(3*n_embd*n_embd*ggml_type_sizef(wtype));         // c_attn_attn_w
-        ctx_size += n_layer*(       3*n_embd*ggml_type_sizef(GGML_TYPE_F32)); // c_attn_attn_b
+        ctx_size += n_layer*(ggml_row_size(wtype,         3*n_embd*n_embd)); // c_attn_attn_w
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, 3*n_embd));        // c_attn_attn_b
 
-        ctx_size += n_layer*(n_embd*n_embd*ggml_type_sizef(wtype));         // c_attn_proj_w
-        ctx_size += n_layer*(n_embd*n_embd*ggml_type_sizef(GGML_TYPE_F32)); // c_attn_proj_b
+        ctx_size += n_layer*(ggml_row_size(wtype,         n_embd*n_embd)); // c_attn_proj_w
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd*n_embd)); // c_attn_proj_b
 
-        ctx_size += n_layer*(n_embd*ggml_type_sizef(GGML_TYPE_F32)); // ln_2_g
-        ctx_size += n_layer*(n_embd*ggml_type_sizef(GGML_TYPE_F32)); // ln_2_b
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_g
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_b
 
-        ctx_size += n_layer*(4*n_embd*n_embd*ggml_type_sizef(wtype));         // c_mlp_fc_w
-        ctx_size += n_layer*(       4*n_embd*ggml_type_sizef(GGML_TYPE_F32)); // c_mlp_fc_b
+        ctx_size += n_layer*(ggml_row_size(wtype,         4*n_embd*n_embd)); // c_mlp_fc_w
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, 4*n_embd));        // c_mlp_fc_b
 
-        ctx_size += n_layer*(4*n_embd*n_embd*ggml_type_sizef(wtype));         // c_mlp_proj_w
-        ctx_size += n_layer*(         n_embd*ggml_type_sizef(GGML_TYPE_F32)); // c_mlp_proj_b
+        ctx_size += n_layer*(ggml_row_size(wtype,         4*n_embd*n_embd)); // c_mlp_proj_w
+        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32,   n_embd));        // c_mlp_proj_b
 
-        ctx_size += n_ctx*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F32); // memory_k
-        ctx_size += n_ctx*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F32); // memory_v
+        ctx_size += n_ctx*n_layer*ggml_row_size(GGML_TYPE_F32, n_embd); // memory_k
+        ctx_size += n_ctx*n_layer*ggml_row_size(GGML_TYPE_F32, n_embd); // memory_v
 
         ctx_size += (6 + 16*n_layer)*512; // object overhead
 
@@ -497,7 +497,14 @@ bool dollyv2_eval(
     };
 
     struct ggml_context * ctx0 = ggml_init(params);
-    struct ggml_cgraph gf = { };
+    struct ggml_cgraph * gf = ggml_new_graph(ctx0);
+
+    // KQ_pos - contains the positions
+    struct ggml_tensor * KQ_pos = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, N);
+    int * data = (int *) KQ_pos->data;
+    for (int i = 0; i < N; ++i) {
+        data[i] = n_past + i;
+    }
 
     struct ggml_tensor * embd = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, N);
     memcpy(embd->data, embd_inp.data(), N*ggml_element_size(embd));
@@ -536,8 +543,8 @@ bool dollyv2_eval(
             struct ggml_tensor * Vcur = ggml_cont(ctx0, ggml_view_3d(ctx0, cur, n_embd/n_head, n_head, N, cur->nb[1]/n_head, cur->nb[1], 2*sizeof(float)*n_embd/n_head));
 
             // using mode = 2 for GPT-NeoX mode
-            Qcur = ggml_rope_inplace(ctx0, Qcur, n_past, n_rot, 2, 0);
-            Kcur = ggml_rope_inplace(ctx0, Kcur, n_past, n_rot, 2, 0);
+            Qcur = ggml_rope_inplace(ctx0, Qcur, KQ_pos, n_rot, 2, 0);
+            Kcur = ggml_rope_inplace(ctx0, Kcur, KQ_pos, n_rot, 2, 0);
 
             // store key and value to memory
             {
@@ -548,8 +555,8 @@ bool dollyv2_eval(
                         (   n_ctx)*ggml_element_size(model.memory_v),
                         (il*n_ctx)*ggml_element_size(model.memory_v)*n_embd + n_past*ggml_element_size(model.memory_v));
 
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Kcur, k));
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Vcur, v));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Kcur, k));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Vcur, v));
             }
 
             // Q = Qcur.contiguous().view(n_embd/n_head, n_head, N).permute(0, 2, 1, 3)
@@ -573,8 +580,7 @@ bool dollyv2_eval(
             struct ggml_tensor * KQ_scaled =
                 ggml_scale_inplace(ctx0,
                         KQ,
-                        ggml_new_f32(ctx0, 1.0f/sqrt(float(n_embd)/n_head))
-                        );
+                        1.0f/sqrt(float(n_embd)/n_head));
 
             // KQ_masked = mask_past(KQ_scaled)
             struct ggml_tensor * KQ_masked = ggml_diag_mask_inf_inplace(ctx0, KQ_scaled, n_past);
@@ -659,8 +665,8 @@ bool dollyv2_eval(
     //inpL = ggml_soft_max_inplace(ctx0, inpL);
 
     // run the computation
-    ggml_build_forward_expand(&gf, inpL);
-    ggml_graph_compute_with_ctx(ctx0, &gf, n_threads);
+    ggml_build_forward_expand(gf, inpL);
+    ggml_graph_compute_with_ctx(ctx0, gf, n_threads);
 
     //if (n_past%100 == 0) {
     //    ggml_graph_print   (&gf);

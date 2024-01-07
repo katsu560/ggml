@@ -75,7 +75,7 @@ struct llama_buffer {
     void resize(size_t len) {
 #ifdef GGML_USE_METAL
         free(addr);
-        int result = posix_memalign((void **) &addr, getpagesize(), len);
+        int result = posix_memalign((void **) &addr, sysconf(_SC_PAGESIZE), len);
         if (result == 0) {
             memset(addr, 0, len);
         }
@@ -673,7 +673,7 @@ bool starcoder_eval(
     };
 
     struct ggml_context * ctx0 = ggml_init(params);
-    struct ggml_cgraph gf = {};
+    struct ggml_cgraph * gf = ggml_new_graph(ctx0);
 
     struct ggml_tensor * embd = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, N);
 
@@ -739,8 +739,8 @@ bool starcoder_eval(
                 struct ggml_tensor * k = ggml_view_1d(ctx0, cache.k, N*n_embd, (ggml_element_size(cache.k)*n_embd)*(il*n_ctx + n_past));
                 struct ggml_tensor * v = ggml_view_1d(ctx0, cache.v, N*n_embd, (ggml_element_size(cache.v)*n_embd)*(il*n_ctx + n_past));
 
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Kcur, k));
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Vcur, v));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Kcur, k));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Vcur, v));
             }
 
             // Q = Qcur.contiguous().view(n_embd/n_head, n_head, N).permute(0, 2, 1, 3)
@@ -782,8 +782,7 @@ bool starcoder_eval(
             struct ggml_tensor * KQ_scaled =
                 ggml_scale_inplace(ctx0,
                         KQ,
-                        ggml_new_f32(ctx0, 1.0f/sqrt(float(n_embd)/n_head))
-                        );
+                        1.0f/sqrt(float(n_embd)/n_head));
 
             // KQ_masked = mask_past(KQ_scaled)
             // [n_past + N, N, 12]
@@ -927,8 +926,8 @@ bool starcoder_eval(
     //inpL = ggml_soft_max_inplace(ctx0, inpL);
 
     // run the computation
-    ggml_build_forward_expand(&gf, inpL);
-    ggml_graph_compute_with_ctx(ctx0, &gf, n_threads);
+    ggml_build_forward_expand(gf, inpL);
+    ggml_graph_compute_with_ctx(ctx0, gf, n_threads);
 
     //if (n_past%100 == 0) {
     //    ggml_graph_print   (&gf);

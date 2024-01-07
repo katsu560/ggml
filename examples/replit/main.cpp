@@ -256,18 +256,21 @@ bool replit_model_load(const std::string & fname, replit_model & model, replit_t
         const int n_ctx = hparams.max_seq_len;
         const int n_vocab = hparams.n_vocab;
 
-        ctx_size += n_embd * n_vocab * ggml_type_sizef(wtype); // wte_weight
-        ctx_size += n_embd * ggml_type_sizef(GGML_TYPE_F32);   // ln_f_weight
+        ctx_size += ggml_row_size(wtype,         n_embd*n_vocab); // wte_weight
+        ctx_size += ggml_row_size(GGML_TYPE_F32, n_embd);         // ln_f_weight
 
-        ctx_size += n_layer * (n_embd * ggml_type_sizef(GGML_TYPE_F32));      // ln_1_weight
-        ctx_size += n_layer * (3 * n_embd * n_embd * ggml_type_sizef(wtype)); // attn_Wqkv_weight
-        ctx_size += n_layer * (n_embd * n_embd * ggml_type_sizef(wtype));     // attn_out_proj_weight
-        ctx_size += n_layer * (n_embd * ggml_type_sizef(GGML_TYPE_F32));      // ln_2_weight
-        ctx_size += n_layer * (4 * n_embd * n_embd * ggml_type_sizef(wtype)); // mlp_mlp_up_weight
-        ctx_size += n_layer * (n_embd * n_embd * 4 * ggml_type_sizef(wtype)); // mlp_mlp_down_weight
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd));       // ln_1_weight
 
-        ctx_size += n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16); // memory_k
-        ctx_size += n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16); // memory_v
+        ctx_size += n_layer * (ggml_row_size(wtype, 3 * n_embd * n_embd));  // attn_Wqkv_weight
+        ctx_size += n_layer * (ggml_row_size(wtype,     n_embd * n_embd)); // attn_out_proj_weight
+
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_weight
+
+        ctx_size += n_layer * (ggml_row_size(wtype, 4 * n_embd * n_embd)); // mlp_mlp_up_weight
+        ctx_size += n_layer * (ggml_row_size(wtype, 4 * n_embd * n_embd)); // mlp_mlp_down_weight
+
+        ctx_size += n_ctx * n_layer * ggml_row_size(GGML_TYPE_F16, n_embd); // memory_k
+        ctx_size += n_ctx * n_layer * ggml_row_size(GGML_TYPE_F16, n_embd); // memory_v
 
         ctx_size += (1 + 6 * n_layer) * 512; // object overhead
 
@@ -476,7 +479,7 @@ bool replit_eval(const replit_model & model, const int n_threads, const int n_pa
     };
 
     struct ggml_context * ctx0 = ggml_init(params);
-    struct ggml_cgraph gf = {};
+    struct ggml_cgraph * gf = ggml_new_graph(ctx0);
 
     struct ggml_tensor * embd = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, N);
     memcpy(embd->data, embd_inp.data(), N * ggml_element_size(embd));
@@ -515,8 +518,8 @@ bool replit_eval(const replit_model & model, const int n_threads, const int n_pa
                     ggml_view_1d(ctx0, model.memory_v, N * n_embd,
                                  (ggml_element_size(model.memory_v) * n_embd) * (il * n_ctx + n_past));
 
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Kcur, k));
-                ggml_build_forward_expand(&gf, ggml_cpy(ctx0, Vcur, v));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Kcur, k));
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, Vcur, v));
             }
 
             // Q = Qcur.contiguous().view(n_embd/n_head, n_head, N).permute(0,
@@ -539,7 +542,7 @@ bool replit_eval(const replit_model & model, const int n_threads, const int n_pa
 
             // KQ_scaled = KQ / sqrt(n_embd/n_head)
             struct ggml_tensor * KQ_scaled =
-                ggml_scale(ctx0, KQ, ggml_new_f32(ctx0, 1.0f / sqrt(float(n_embd) / n_head)));
+                ggml_scale(ctx0, KQ, 1.0f / sqrt(float(n_embd) / n_head));
 
             struct ggml_tensor * KQ_scaled_alibi = ggml_alibi(ctx0, KQ_scaled, n_past, n_head, 8.0f);
 
@@ -614,8 +617,8 @@ bool replit_eval(const replit_model & model, const int n_threads, const int n_pa
     // inpL = ggml_soft_max(ctx0, inpL);
 
     // run the computation
-    ggml_build_forward_expand(&gf, inpL);
-    ggml_graph_compute_with_ctx(ctx0, &gf, n_threads);
+    ggml_build_forward_expand(gf, inpL);
+    ggml_graph_compute_with_ctx(ctx0, gf, n_threads);
 
     // std::cout << "Qcur" << std::endl;
     // print_tensor(Qcur);

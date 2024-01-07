@@ -159,7 +159,7 @@ target_link_libraries(${TEST_TARGET} PRIVATE ggml)
 
 #
 # test-vec1 (x86)
-if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86")
+if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86" AND "${CMAKE_C_FLAGS}" MATCHES "avx")
     set(TEST_TARGET test-vec1)
     add_executable(${TEST_TARGET} ${TEST_TARGET}.c)
     target_link_libraries(${TEST_TARGET} PRIVATE ggml)
@@ -313,6 +313,14 @@ target_link_libraries(${TEST_TARGET} PRIVATE ggml)
 add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
 
 #
+# test-dup
+
+set(TEST_TARGET test-dup)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.c)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+
+#
 # test-rel-pos
 
 set(TEST_TARGET test-rel-pos)
@@ -352,6 +360,55 @@ set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_
 
 set(TEST_TARGET test-xpos)
 add_executable(${TEST_TARGET} ${TEST_TARGET}.c)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
+
+#
+# test-conv1d
+
+set(TEST_TARGET test-conv1d)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.cpp)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
+
+
+#
+# test-conv2d
+
+set(TEST_TARGET test-conv2d)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.cpp)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
+
+
+#
+# test-mul-mat
+
+set(TEST_TARGET test-mul-mat)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.cpp)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
+
+
+#
+# test-backend-buffer
+
+set(TEST_TARGET test-backend-buffer)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.cpp)
+target_link_libraries(${TEST_TARGET} PRIVATE ggml)
+add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
+set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
+
+
+#
+# test-backend-ops
+
+set(TEST_TARGET test-backend-ops)
+add_executable(${TEST_TARGET} ${TEST_TARGET}.cpp)
 target_link_libraries(${TEST_TARGET} PRIVATE ggml)
 add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
 set_property(TEST ${TEST_TARGET} PROPERTY ENVIRONMENT "LLVM_PROFILE_FILE=${TEST_TARGET}.profraw")
