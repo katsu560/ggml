@@ -49,6 +49,7 @@ Some of the development is currently happening in the [llama.cpp](https://github
 - [X] Example of Qwen inference [QwenLM/qwen.cpp](https://github.com/QwenLM/qwen.cpp)
 - [X] Example of YOLO inference [examples/yolo](https://github.com/ggerganov/ggml/tree/master/examples/yolo)
 - [X] Example of ViT inference [staghado/vit.cpp](https://github.com/staghado/vit.cpp)
+- [X] Example of multiple LLMs inference [foldl/chatllm.cpp](https://github.com/foldl/chatllm.cpp)
 - [X] SeamlessM4T inference *(in development)* https://github.com/facebookresearch/seamless_communication/tree/main/ggml
 
 ## Whisper inference (example)
@@ -81,7 +82,7 @@ make -j4 gpt-2-backend gpt-j
 
 # Run the GPT-2 small 117M model
 ../examples/gpt-2/download-ggml-model.sh 117M
-./bin/gpt-2 -m models/gpt-2-117M/ggml-model.bin -p "This is an example"
+./bin/gpt-2-backend -m models/gpt-2-117M/ggml-model.bin -p "This is an example"
 
 # Run the GPT-J 6B model (requires 12GB disk space and 16GB CPU RAM)
 ../examples/gpt-j/download-ggml-model.sh 6B
