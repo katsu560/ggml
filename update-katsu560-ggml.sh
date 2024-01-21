@@ -1391,6 +1391,10 @@ git_updatetoken()
 		git remote add origin $XGITTOKENURL
 	fi
 	RETCODE=$?
+	XGITNAME=
+	msg "git config --global user.name"
+	XGITNAME=`git config --global user.name`
+	msg "GITNAME:$GITNAME"
 
 	if [ ! $RETCODE -eq $RET_OK ]; then
 		emsg "git_updatetoken: $RETCODE: error"
