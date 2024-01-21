@@ -1344,6 +1344,61 @@ git_init()
 		fi
 	#fi
 }
+
+# func:do_sync ver: 2024.01.21
+# update github token
+# git_updatetoken GITTOKEN
+git_updatetoken()
+{
+	local RETCODE XGITTOKEN XGITNAME XGITTOKENURL
+
+	xmsg "git_updatetoken: $*"
+
+	if [ x"$GITDIR" = x ]; then
+		die $ERR_BADSETTINGS "git_updatetoken: need GITDIR, exit"
+	fi
+	if [ x"$GITNAME" = x ]; then
+		die $ERR_BADSETTINGS "git_updatetoken: need GITNAME, exit"
+	fi
+	if [ x"$TOPDIR" = x ]; then
+		die $ERR_BADSETTINGS "git_updatetoken: need TOPDIR, exit"
+	fi
+
+	if [ x"$1" = x ]; then
+		die $ERR_NOARG "git_updatetoken: need GITTOKEN like ghp_123456789012345678901234567890123456, exit"
+	fi
+	XGITTOKEN="$1"
+
+	# to GITDIR
+	msg "cd $GITDIR"
+	if [ $NOEXEC -eq $RET_FALSE ]; then
+		cd $GITDIR || die $? "can't cd $GITDIR, exit"
+	fi
+
+	XGITNAME=
+	msg "git config --global user.name"
+	XGITNAME=`git config --global user.name`
+	msg "GITNAME:$GITNAME"
+
+	# git remote add origin https://ghp_123456789012345678901234567890123456@github.com/GITNAME/ggml.git
+	XGITTOKENURL="https://${GITTOKEN}@github.com/${GITNAME}/${TOPDIR}.git"
+	msg "git remote remove origin"
+	if [ $NOEXEC -eq $RET_FALSE ]; then
+		git remote remove origin
+	fi
+	msg "git remote add origin $XGITTOKENURL"
+	if [ $NOEXEC -eq $RET_FALSE ]; then
+		git remote add origin $XGITTOKENURL
+	fi
+	RETCODE=$?
+
+	if [ ! $RETCODE -eq $RET_OK ]; then
+		emsg "git_updatetoken: $RETCODE: error"
+	fi
+
+	return $RETCODE
+}
+
 # func:do_sync ver: 2024.01.15
 # do synchronize remote BRANCH
 # do_sync
@@ -1457,6 +1512,13 @@ if [ x"$1" = x"setup" ]; then
 
 	okmsg "# $MYNAME setup finished"
 	exit $RET_OK
+fi
+
+# token
+if [ x"$1" = x"token" ]; then
+	msg "git_updatetoken $2"
+	git_updatetoken $2
+	exit $?
 fi
 
 
