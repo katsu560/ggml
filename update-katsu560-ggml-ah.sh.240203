@@ -47,14 +47,6 @@ NODIE=$RET_FALSE	# -nd --nodie
 NOCOPY=$RET_FALSE	# -ncp --nocopy
 NOTHING=
 
-LEVELMIN=1
-LEVELSTD=3
-LEVELMAX=5
-DOLEVEL=$LEVELSTD
-
-### date time
-DTTMSHSTART=
-
 
 ###
 # https://qiita.com/ko1nksm/items/095bdb8f0eca6d327233
@@ -227,6 +219,11 @@ set_ret()
 	return $1
 }
 
+# dolevel
+LEVELMIN=1
+LEVELSTD=3
+LEVELMAX=5
+DOLEVEL=$LEVELSTD
 # func:chk_level ver: 2024.01.08
 # check given LEVEL less or equal than DOLEVEL, then do ARGS
 # chk_level LEVEL ARGS ...
@@ -519,6 +516,8 @@ test_chk_level()
 }
 #msg "test_chk_level"; VERBOSE=2; test_chk_level; exit 0
 
+### date time
+DTTMSHSTART=
 # func:get_datetime ver:2023.12.31
 # get date time and store to VARDTTM
 # get_date VARDTTM
@@ -1598,12 +1597,15 @@ TARGETS=
 TESTS=
 GPT2=
 
+# func:get_targets ver: 2024.02.03
+# get make targets to TARGETS and test targets to TESTS
+# get_targets
 get_targets()
 {
 	local XTARGETS i
 
 	if [ ! -e $BUILDPATH/Makefile ]; then
-		msg "no $BUILDPATH/Makefile"
+		emsg "no $BUILDPATH/Makefile"
 		return $ERR_NOTEXISTED
 	fi
 
@@ -1672,9 +1674,9 @@ cd_buildpath()
 	fi
 }
 
-# func:cp_mk_script ver: 2024.01.01
-# do script(FIXBASEyymmdd.sh mk) for create script
-# cp_mk_script
+# func:do_mk_script ver: 2024.02.03
+# do script(FIXBASEyymmddMYEXT.sh mk) for create script
+# do_mk_script
 do_mk_script()
 {
 	# in build
@@ -1700,19 +1702,22 @@ do_mk_script()
 	DFFIXSH=`get_latestdatefile "${FIXSHNAME}*"`
 	DFIXSH=`get_datefile_date ymd $DFFIXSH`
 	FFIXSH=`get_datefile_file $DFFIXSH`
+	# git change date as today, so get date from file name
+	DFIXSH=`echo $FFIXSH | sed -e 's/'${FIXBASE}'//' -e 's/'${MYEXT}'\.sh.*//'`
 	msg "FIXSH:$FFIXSH"
 
 	# check
-	if [ ! x$DTNOW = x"$DFIXSH" ]; then
+	msg "FFIXSH: DTNOW:$DTNOW DFIXSH:$DFIXSH"
+	if [ ! x"$DTNOW" = x"$DFIXSH" ]; then
 		msg "sh $FFIXSH mk"
 		if [ $NOEXEC -eq $RET_FALSE ]; then
 			sh $FFIXSH mk
 			if [ ! $? -eq $RET_OK ]; then
-				die $? "RETCODE:$?: can't make ${FIXBASE}${DTNOW}.sh, exit"
+				die $? "RETCODE:$?: can't make ${FIXBASE}${DTNOW}${MYEXT}.sh, exit"
 			fi
 			if [ ! -s $FFIXSH ]; then
 				rm -f $FFIXSH
-				die $ERR_CANTCREATE "size zero, can't create ${FIXBASE}${DTNOW}.sh, exit"				
+				die $ERR_CANTCREATE "size zero, can't create ${FIXBASE}${DTNOW}${MYEXT}.sh, exit"				
 			fi
 
 			DFFIXSH=`get_latestdatefile "${FIXSHNAME}*"`
@@ -1729,6 +1734,7 @@ do_mk_script()
 	msg "cd $BUILDPATH"
 	cd $BUILDPATH
 }
+#VERBOSE=2; do_mk_script
 
 # func:do_cp ver: 2024.01.07
 # do copy sd.cpp source,examples files to DIRNAME
