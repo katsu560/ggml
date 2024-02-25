@@ -227,6 +227,14 @@ static std::string var_to_str(ggml_type type) {
     return ggml_type_name(type);
 }
 
+static std::string var_to_str(ggml_op_pool pool) {
+    switch (pool) {
+        case GGML_OP_POOL_AVG:  return "avg";
+        case GGML_OP_POOL_MAX:  return "max";
+        default:                return std::to_string(pool);
+    }
+}
+
 #define VARS_TO_STR1(a) VAR_TO_STR(a)
 #define VARS_TO_STR2(a, b) VAR_TO_STR(a) + "," + VAR_TO_STR(b)
 #define VARS_TO_STR3(a, b, c) VAR_TO_STR(a) + "," + VARS_TO_STR2(b, c)
@@ -238,6 +246,7 @@ static std::string var_to_str(ggml_type type) {
 #define VARS_TO_STR9(a, b, c, d, e, f, g, h, i) VAR_TO_STR(a) + "," + VARS_TO_STR8(b, c, d, e, f, g, h, i)
 #define VARS_TO_STR10(a, b, c, d, e, f, g, h, i, j) VAR_TO_STR(a) + "," + VARS_TO_STR9(b, c, d, e, f, g, h, i, j)
 #define VARS_TO_STR11(a, b, c, d, e, f, g, h, i, j, k) VAR_TO_STR(a) + "," + VARS_TO_STR10(b, c, d, e, f, g, h, i, j, k)
+#define VARS_TO_STR12(a, b, c, d, e, f, g, h, i, j, k, l) VAR_TO_STR(a) + "," + VARS_TO_STR11(b, c, d, e, f, g, h, i, j, k, l)
 
 #ifdef GGML_USE_SYCL
 static bool inline _isinf(float f) {
@@ -1076,24 +1085,32 @@ struct test_diag_mask_inf : public test_case {
 struct test_soft_max : public test_case {
     const ggml_type type;
     const std::array<int64_t, 4> ne;
-    const float scale;
     const bool mask;
+    const float scale;
+    const float max_bias;
 
     std::string vars() override {
-        return VARS_TO_STR4(type, ne, scale, mask);
+        return VARS_TO_STR5(type, ne, mask, scale, max_bias);
     }
 
     test_soft_max(ggml_type type = GGML_TYPE_F32,
             std::array<int64_t, 4> ne = {10, 10, 10, 10},
+            bool mask = false,
             float scale = 1.0f,
-            bool mask = false)
-        : type(type), ne(ne), scale(scale), mask(mask) {}
+            float max_bias = 0.0f)
+        : type(type), ne(ne), mask(mask), scale(scale), max_bias(max_bias) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
         ggml_tensor * a = ggml_new_tensor(ctx, type, 4, ne.data());
-        ggml_tensor * b = nullptr;
-        if (mask) { b = ggml_new_tensor_2d(ctx, type, ne[0], ne[1]); }
-        ggml_tensor * out = ggml_soft_max_ext(ctx, a, b, scale);
+        ggml_tensor * mask = nullptr;
+        if (this->mask) {
+            mask = ggml_new_tensor_2d(ctx, type, ne[0], ne[1]);
+        }
+        ggml_tensor * pos = nullptr;
+        if (max_bias > 0.0f) {
+            pos = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, ne[0]);
+        }
+        ggml_tensor * out = ggml_soft_max_ext(ctx, a, mask, pos, scale, max_bias);
         return out;
     }
 };
@@ -1138,26 +1155,36 @@ struct test_rope : public test_case {
     }
 };
 
-// GGML_OP_ALIBI
-struct test_alibi : public test_case {
-    const ggml_type type;
-    const std::array<int64_t, 4> ne;
-    int n_past;
-    int n_head;
-    float bias_max;
+// GGML_OP_POOL2D
+struct test_pool2d : public test_case {
+    enum ggml_op_pool pool_type;
+    const ggml_type type_input;
+    const std::array<int64_t, 4> ne_input;
+    // kernel size
+    const int k0;
+    const int k1;
+    // stride
+    const int s0;
+    const int s1;
+    // padding
+    const int p0;
+    const int p1;
 
     std::string vars() override {
-        return VARS_TO_STR5(type, ne, n_past, n_head, bias_max);
+        return VARS_TO_STR9(pool_type, type_input, ne_input, k0, k1, s0, s1, p0, p1);
     }
 
-    test_alibi(ggml_type type = GGML_TYPE_F32,
-            std::array<int64_t, 4> ne = {10, 10, 10, 10},
-            int n_past = 512, int n_head = 10, float bias_max = 0.5f)
-        : type(type), ne(ne), n_past(n_past), n_head(n_head), bias_max(bias_max) {}
+    test_pool2d(ggml_op_pool pool_type = GGML_OP_POOL_AVG,
+            ggml_type type_input = GGML_TYPE_F32,
+            std::array<int64_t, 4> ne_input = {10, 10, 3, 1}, // [input_width, input_height, input_channels, 1]
+            int k0 = 3, int k1 = 3,
+            int s0 = 1, int s1 = 1,
+            int p0 = 1, int p1 = 1)
+        : pool_type(pool_type), type_input(type_input), ne_input(ne_input), k0(k0), k1(k1), s0(s0), s1(s1), p0(p0), p1(p1) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * a = ggml_new_tensor(ctx, type, 4, ne.data());
-        ggml_tensor * out = ggml_alibi(ctx, a, n_past, n_head, bias_max);
+        ggml_tensor * input = ggml_new_tensor(ctx, type_input, 4, ne_input.data());
+        ggml_tensor * out = ggml_pool_2d(ctx, input, pool_type, k0, k1, s0, s1, p0, p1);
         return out;
     }
 };
@@ -1166,6 +1193,7 @@ struct test_alibi : public test_case {
 struct test_im2col : public test_case {
     const ggml_type type_input;
     const ggml_type type_kernel;
+    const ggml_type dst_type;
     const std::array<int64_t, 4> ne_input;
     const std::array<int64_t, 4> ne_kernel;
     // stride
@@ -1181,22 +1209,22 @@ struct test_im2col : public test_case {
     const bool is_2D;
 
     std::string vars() override {
-        return VARS_TO_STR11(type_input, type_kernel, ne_input, ne_kernel, s0, s1, p0, p1, d0, d1, is_2D);
+        return VARS_TO_STR12(type_input, type_kernel, dst_type, ne_input, ne_kernel, s0, s1, p0, p1, d0, d1, is_2D);
     }
 
-    test_im2col(ggml_type type_input = GGML_TYPE_F32, ggml_type type_kernel = GGML_TYPE_F16,
+    test_im2col(ggml_type type_input = GGML_TYPE_F32, ggml_type type_kernel = GGML_TYPE_F16, ggml_type dst_type = GGML_TYPE_F32,
             std::array<int64_t, 4> ne_input = {10, 10, 3, 1}, // [input_width, input_height, input_channels, 1]
             std::array<int64_t, 4> ne_kernel = {3, 3, 3, 1}, // [kernel_width, kernel_height, input_channels, 1]
             int s0 = 1, int s1 = 1,
             int p0 = 1, int p1 = 1,
             int d0 = 1, int d1 = 1,
             bool is_2D = true)
-        : type_input(type_input), type_kernel(type_kernel), ne_input(ne_input), ne_kernel(ne_kernel), s0(s0), s1(s1), p0(p0), p1(p1), d0(d0), d1(d1), is_2D(is_2D) {}
+        : type_input(type_input), type_kernel(type_kernel), dst_type(dst_type), ne_input(ne_input), ne_kernel(ne_kernel), s0(s0), s1(s1), p0(p0), p1(p1), d0(d0), d1(d1), is_2D(is_2D) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
         ggml_tensor * input = ggml_new_tensor(ctx, type_input, 4, ne_input.data());
         ggml_tensor * kernel = ggml_new_tensor(ctx, type_kernel, 4, ne_kernel.data());
-        ggml_tensor * out = ggml_im2col(ctx, kernel, input, s0, s1, p0, p1, d0, d1, is_2D);
+        ggml_tensor * out = ggml_im2col(ctx, kernel, input, s0, s1, p0, p1, d0, d1, is_2D, dst_type);
         return out;
     }
 };
@@ -1444,7 +1472,7 @@ struct test_moe : public test_case {
         ggml_tensor * cur = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, n_tokens);
 
         ggml_tensor * logits = ggml_mul_mat(ctx, ffn_gate_inp, cur);
-        ggml_tensor * probs = ggml_soft_max_ext(ctx, logits, nullptr, 1.0f/sqrtf(n_embd));
+        ggml_tensor * probs = ggml_soft_max_ext(ctx, logits, nullptr, nullptr, 1.0f/sqrtf(n_embd), 0.0f);
 
         // select experts
         ggml_tensor * selected_experts = ggml_top_k(ctx, probs, n_experts_per_tok);
@@ -1573,7 +1601,6 @@ public:
         ggml_cpy(ctx, v_cur_t, v_cache_view);
     }
 
-    // if max_alibi_bias > 0 then apply ALiBi
     struct ggml_tensor * llm_build_kqv(
             struct ggml_context * ctx,
              struct ggml_tensor * k_l,
@@ -1592,7 +1619,7 @@ public:
 
         struct ggml_tensor * kq = ggml_mul_mat(ctx, k, q);
 
-        kq = ggml_soft_max_ext(ctx, kq, kq_mask, kq_scale);
+        kq = ggml_soft_max_ext(ctx, kq, kq_mask, nullptr, kq_scale, 0.0f);
 
         // split cached v into n_head heads
         struct ggml_tensor * v =
@@ -1890,7 +1917,8 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         GGML_TYPE_Q4_K, GGML_TYPE_Q5_K,
         GGML_TYPE_Q6_K,
         GGML_TYPE_IQ2_XXS, GGML_TYPE_IQ2_XS,
-        GGML_TYPE_IQ3_XXS,
+        GGML_TYPE_IQ3_XXS, GGML_TYPE_IQ1_S,
+        GGML_TYPE_IQ4_NL,
     };
 
     // unary ops
@@ -1911,6 +1939,27 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
             test_cases.emplace_back(new test_get_rows(GGML_TYPE_I32, 256, 5, 4, b, v));
         }
     }
+
+    for (ggml_type type_input : {GGML_TYPE_F32}) {
+        for (ggml_op_pool pool_type : {GGML_OP_POOL_AVG, GGML_OP_POOL_MAX}) {
+            for (int k0 : {1, 3}) {
+                for (int k1 : {1, 3}) {
+                    for (int s0 : {1, 2}) {
+                        for (int s1 : {1, 2}) {
+                            for (int p0 : {0, 1}) {
+                                for (int p1 : {0, 1}) {
+                                    test_cases.emplace_back(new test_pool2d(pool_type, type_input, {10, 10, 3, 1}, k0, k1, s0, s1, p0, p1));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    test_cases.emplace_back(new test_im2col(GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_F32));
+    test_cases.emplace_back(new test_im2col(GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_F16));
 
     test_cases.emplace_back(new test_repeat(GGML_TYPE_F32, {10, 10, 10, 10}, {1, 1, 1, 1}));
     test_cases.emplace_back(new test_repeat(GGML_TYPE_F32, {10, 10, 10, 10}, {2, 1, 1, 1}));
@@ -2018,6 +2067,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
     test_cases.emplace_back(new test_diag_mask_inf(GGML_TYPE_F32, {10, 10, 10,  1}, 5));
     test_cases.emplace_back(new test_diag_mask_inf(GGML_TYPE_F32, {10, 10, 10, 10}, 5));
 
+#if 0
     std::uniform_int_distribution<> dist_ne1(1, 50);
     int exponent = 1;
     while (exponent < (1 << 17)) {
@@ -2026,14 +2076,29 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         for (int n = 0; n < 10; ++n) {
             int64_t ne0 = dist_ne0(rng);
             int64_t ne1 = dist_ne1(rng);
-            test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {ne0, ne1, 1, 1}));
+            test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {ne0, ne1, 1, 1}, n/2 == 0, 0.1f, ne0 < 1000 ? 4.0f : 0.0f));
         }
 
         exponent <<= 1;
     }
+#endif
+    for (bool mask : {false, true}) {
+        for (float max_bias : {0.0f, 8.0f}) {
+            for (float scale : {1.0f, 0.1f}) {
+                for (int64_t ne0 : {16, 1024}) {
+                    for (int64_t ne1 : {16, 1024}) {
+                        test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {ne0, ne1, 1, 1}, mask, scale, max_bias));
+                        test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {ne0-1, ne1-1, 1, 1}, mask, scale, max_bias));
+                    }
+                }
+            }
+        }
+    }
 
-    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {16, 2, 32, 1}, 0.1f));
-    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {32, 2, 32, 1}, 0.1f, true));
+    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {16, 2, 32, 1}, false, 0.1f, 0.0f));
+    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {32, 2, 32, 1}, true,  0.1f, 0.0f));
+    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {16, 2, 32, 1}, false, 0.1f, 8.0f));
+    test_cases.emplace_back(new test_soft_max(GGML_TYPE_F32, {32, 2, 32, 1}, true,  0.1f, 8.0f));
 
     for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16}) {
         test_cases.emplace_back(new test_rope(type, {128,  32, 10, 1}, 128, 0, 512)); // llama 7B
@@ -2048,8 +2113,6 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         test_cases.emplace_back(new test_rope(type, { 80,  32, 10, 1},  32, 2, 512)); // neox (phi-2)
     }
 
-    test_cases.emplace_back(new test_alibi());
-    test_cases.emplace_back(new test_im2col());
     test_cases.emplace_back(new test_concat(GGML_TYPE_F32));
     test_cases.emplace_back(new test_concat(GGML_TYPE_I32));
 
@@ -2065,14 +2128,13 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
     test_cases.emplace_back(new test_pad());
     test_cases.emplace_back(new test_leaky_relu());
 
+    // these tests are disabled to save execution time, but they can be handy for debugging
+#if 0
 #if !defined(__SANITIZE_THREAD__)
     // FIXME: these tests use too much memory with thread sanitizer
     test_cases.emplace_back(new test_moe(8, 2, 1, 4096, 8*1024));
     //test_cases.emplace_back(new test_moe(8, 2, 8, 4096, 14336));
 #endif
-
-    // these tests are disabled to save execution time, but they can be handy for debugging
-#if 0
     test_cases.emplace_back(new test_llama(1));
     test_cases.emplace_back(new test_llama(2));
     test_cases.emplace_back(new test_falcon(1));
