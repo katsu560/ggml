@@ -1,7 +1,7 @@
 #!/bin/sh
 
 MYEXT="-ah"
-MYNAME=fix240121${MYEXT}.sh
+MYNAME=fix240225${MYEXT}.sh
 
 # common code, functions
 ### return code/error code
