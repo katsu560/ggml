@@ -20,6 +20,9 @@ The key difference between GGJT and GGUF is the use of a key-value structure for
 
 ### File Structure
 
+![image](https://github.com/ggerganov/ggml/assets/1991296/c3623641-3a1d-408e-bfaf-1b7c4e16aa63)
+*diagram by [@mishig25](https://github.com/mishig25) (GGUF v3)*
+
 GGUF files are structured as follows. They use a global alignment specified in the `general.alignment` metadata field, referred to as `ALIGNMENT` below. Where required, the file is padded with `0x00` bytes to the next multiple of `general.alignment`.
 
 Fields, including arrays, are written sequentially without alignment unless otherwise specified.
@@ -28,26 +31,36 @@ Models are little-endian by default. They can also come in big-endian for use wi
 
 ```c
 enum ggml_type: uint32_t {
-    GGML_TYPE_F32  = 0,
-    GGML_TYPE_F16  = 1,
-    GGML_TYPE_Q4_0 = 2,
-    GGML_TYPE_Q4_1 = 3,
+    GGML_TYPE_F32     = 0,
+    GGML_TYPE_F16     = 1,
+    GGML_TYPE_Q4_0    = 2,
+    GGML_TYPE_Q4_1    = 3,
     // GGML_TYPE_Q4_2 = 4, support has been removed
-    // GGML_TYPE_Q4_3 (5) support has been removed
-    GGML_TYPE_Q5_0 = 6,
-    GGML_TYPE_Q5_1 = 7,
-    GGML_TYPE_Q8_0 = 8,
-    GGML_TYPE_Q8_1 = 9,
-    // k-quantizations
-    GGML_TYPE_Q2_K = 10,
-    GGML_TYPE_Q3_K = 11,
-    GGML_TYPE_Q4_K = 12,
-    GGML_TYPE_Q5_K = 13,
-    GGML_TYPE_Q6_K = 14,
-    GGML_TYPE_Q8_K = 15,
-    GGML_TYPE_I8,
-    GGML_TYPE_I16,
-    GGML_TYPE_I32,
+    // GGML_TYPE_Q4_3 = 5, support has been removed
+    GGML_TYPE_Q5_0    = 6,
+    GGML_TYPE_Q5_1    = 7,
+    GGML_TYPE_Q8_0    = 8,
+    GGML_TYPE_Q8_1    = 9,
+    GGML_TYPE_Q2_K    = 10,
+    GGML_TYPE_Q3_K    = 11,
+    GGML_TYPE_Q4_K    = 12,
+    GGML_TYPE_Q5_K    = 13,
+    GGML_TYPE_Q6_K    = 14,
+    GGML_TYPE_Q8_K    = 15,
+    GGML_TYPE_IQ2_XXS = 16,
+    GGML_TYPE_IQ2_XS  = 17,
+    GGML_TYPE_IQ3_XXS = 18,
+    GGML_TYPE_IQ1_S   = 19,
+    GGML_TYPE_IQ4_NL  = 20,
+    GGML_TYPE_IQ3_S   = 21,
+    GGML_TYPE_IQ2_S   = 22,
+    GGML_TYPE_IQ4_XS  = 23,
+    GGML_TYPE_I8      = 24,
+    GGML_TYPE_I16     = 25,
+    GGML_TYPE_I32     = 26,
+    GGML_TYPE_I64     = 27,
+    GGML_TYPE_F64     = 28,
+    GGML_TYPE_IQ1_M   = 29,
     GGML_TYPE_COUNT,
 };
 
@@ -82,7 +95,7 @@ enum gguf_metadata_value_type: uint32_t {
     GGUF_METADATA_VALUE_TYPE_INT64 = 11,
     // The value is a 64-bit IEEE754 floating point number.
     GGUF_METADATA_VALUE_TYPE_FLOAT64 = 12,
-}
+};
 
 // A string in GGUF.
 struct gguf_string_t {
@@ -90,7 +103,7 @@ struct gguf_string_t {
     uint64_t len;
     // The string as a UTF-8 non-null-terminated string.
     char string[len];
-}
+};
 
 union gguf_metadata_value_t {
     uint8_t uint8;
@@ -234,6 +247,7 @@ By convention, most counts/lengths/etc are `uint64` unless otherwise specified. 
   - `gpt2`
   - `bloom`
   - `falcon`
+  - `mamba`
   - `rwkv`
 - **`general.quantization_version: uint32`**: The version of the quantization format. Not required if the model is not quantized (i.e. no tensors are quantized). If any tensors are quantized, this _must_ be present. This is separate to the quantization scheme of the tensors itself; the quantization version may change without changing the scheme's name (e.g. the quantization scheme is Q5_K, and the quantization version is 4).
 - **`general.alignment: uint32`**: the global alignment to use, as described above. This can vary to allow for different alignment schemes, but it must be a multiple of 8. Some writers may not write the alignment. If the alignment is **not** specified, assume it is `32`.
@@ -318,6 +332,13 @@ Note that older models may not have these keys, and may instead use the followin
 - `[llm].rope.scale_linear: float32`: A linear scale factor for RoPE to adjust the context length.
 
 It is recommended that models use the newer keys if possible, as they are more flexible and allow for more complex scaling schemes. Executors will need to support both indefinitely.
+
+#### SSM
+
+- `[llm].ssm.conv_kernel: uint32`: The size of the rolling/shift state.
+- `[llm].ssm.inner_size: uint32`: The embedding size of the states.
+- `[llm].ssm.state_size: uint32`: The size of the recurrent state.
+- `[llm].ssm.time_step_rank: uint32`: The rank of time steps.
 
 #### Models
 
@@ -437,6 +458,17 @@ The following sections describe the metadata for each model architecture. Each k
 
         model[src] = torch.cat((q,k,v)).reshape_as(model[src])
     ```
+
+##### Mamba
+
+- `mamba.context_length`
+- `mamba.embedding_length`
+- `mamba.block_count`
+- `mamba.ssm.conv_kernel`
+- `mamba.ssm.inner_size`
+- `mamba.ssm.state_size`
+- `mamba.ssm.time_step_rank`
+- `mamba.attention.layer_norm_rms_epsilon`
 
 ##### RWKV
 
@@ -563,6 +595,14 @@ where N signifies the block number a layer belongs to, and where `BB` could be:
 - `ffn_gate_exp`: Feed-forward network "gate" layer per expert in MoE models
 - `ffn_down_exp`: Feed-forward network "down" layer per expert in MoE models
 - `ffn_up_exp`: Feed-forward network "up" layer per expert in MoE models
+
+- `ssm_in`: State space model input projections layer
+- `ssm_conv1d`: State space model rolling/shift layer
+- `ssm_x`: State space model selective parametrization layer
+- `ssm_a`: State space model state compression layer
+- `ssm_d`: State space model skip connection layer
+- `ssm_dt`: State space model time step layer
+- `ssm_out`: State space model output projection layer
 
 ## Version History
 
