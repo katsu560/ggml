@@ -1,7 +1,6 @@
 #include <ggml.h>
 #include <ggml-alloc.h>
 #include <ggml-backend.h>
-#include <ggml-backend-impl.h>
 
 #include <algorithm>
 #include <array>
@@ -785,6 +784,10 @@ struct test_cpy : public test_case {
         return VARS_TO_STR3(type_src, type_dst, ne);
     }
 
+    double max_nmse_err() override {
+        return 1e-6;
+    }
+
     size_t op_size(ggml_tensor * t) override {
         return ggml_nbytes(t) + ggml_nbytes(t->src[0]);
     }
@@ -1063,6 +1066,33 @@ struct test_sqr : public test_case {
     }
 };
 
+// GGML_OP_SQRT
+struct test_sqrt : public test_case {
+    const ggml_type type;
+    const std::array<int64_t, 4> ne;
+
+    std::string vars() override {
+        return VARS_TO_STR2(type, ne);
+    }
+
+    test_sqrt(ggml_type type = GGML_TYPE_F32,
+            std::array<int64_t, 4> ne = {10, 10, 10, 10})
+        : type(type), ne(ne) {}
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * a = ggml_new_tensor(ctx, type, 4, ne.data());
+        ggml_tensor * out = ggml_sqrt(ctx, a);
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        // fill with positive values
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+            init_tensor_uniform(t, 0.0f, 100.0f);
+        }
+    }
+};
+
 // GGML_OP_CLAMP
 struct test_clamp : public test_case {
     const ggml_type type;
@@ -1236,6 +1266,32 @@ struct test_pool2d : public test_case {
     }
 };
 
+// GGML_OP_CONV_TRANSPOSE_1D
+struct test_conv_transpose_1d : public test_case {
+    const std::array<int64_t, 4> ne_input;
+    const std::array<int64_t, 4> ne_kernel;
+
+    const int s0; // stride
+    const int p0; // padding
+    const int d0; // dilation
+
+    std::string vars() override {
+        return VARS_TO_STR5(ne_input, ne_kernel, s0, p0, d0);
+    }
+
+    test_conv_transpose_1d(std::array<int64_t, 4> ne_input = {197, 32, 1, 1}, // [input_width, input_height, input_channels, 1]
+                           std::array<int64_t, 4> ne_kernel = {16, 32, 32, 1}, // [kernel_width, kernel_height, input_channels, 1]
+                           int s0 = 1, int p0 = 0, int d0 = 1)
+        : ne_input(ne_input), ne_kernel(ne_kernel), s0(s0), p0(p0), d0(d0) {}
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * input = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne_input.data());
+        ggml_tensor * kernel = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne_kernel.data());
+        ggml_tensor * out = ggml_conv_transpose_1d(ctx, kernel, input, s0, p0, d0);
+        return out;
+    }
+};
+
 // GGML_OP_IM2COL
 struct test_im2col : public test_case {
     const ggml_type type_input;
@@ -1249,7 +1305,7 @@ struct test_im2col : public test_case {
     // padding
     const int p0;
     const int p1;
-    // dilatation
+    // dilation
     const int d0;
     const int d1;
     // mode
@@ -2022,6 +2078,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         GGML_TYPE_IQ2_XS, GGML_TYPE_IQ2_S,
         GGML_TYPE_IQ3_XXS, GGML_TYPE_IQ1_S, GGML_TYPE_IQ1_M,
         GGML_TYPE_IQ4_NL, GGML_TYPE_IQ3_S, GGML_TYPE_IQ4_XS,
+        GGML_TYPE_BF16,
     };
 
     // unary ops
@@ -2066,6 +2123,16 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
 
     test_cases.emplace_back(new test_im2col(GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_F32));
     test_cases.emplace_back(new test_im2col(GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+
+    test_cases.emplace_back(new test_conv_transpose_1d());
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {2,3,2,1}, 3, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {2,3,2,1}, 2, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {2,3,2,1}, 1, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {3,2,2,1}, 2, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {3,2,2,1}, 1, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({3,2,1,1}, {3,1,2,1}, 1, 0, 1));
+    test_cases.emplace_back(new test_conv_transpose_1d({2,1,1,1}, {3,1,1,1}, 1, 0, 1));
+
 
     test_cases.emplace_back(new test_repeat(GGML_TYPE_F32, {10, 10, 10, 10}, {1, 1, 1, 1}));
     test_cases.emplace_back(new test_repeat(GGML_TYPE_F32, {10, 10, 10, 10}, {2, 1, 1, 1}));
@@ -2200,6 +2267,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
     }
 
     test_cases.emplace_back(new test_sqr());
+    test_cases.emplace_back(new test_sqrt());
     test_cases.emplace_back(new test_clamp());
 
     test_cases.emplace_back(new test_diag_mask_inf(GGML_TYPE_F32, {10, 10,  1,  1}, 5));
