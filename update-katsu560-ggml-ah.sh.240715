@@ -1834,7 +1834,12 @@ fi
 
 CMKOPTTEST="-DGGML_BUILD_TESTS=ON"
 CMKOPTEX="-DGGML_BUILD_EXAMPLES=ON"
-CMKCOMMON="$CMKOPTTEST $CMKOPTEX"
+CMKSTATIC=`grep -sr GGML_STATIC $BLASCMKLIST | sed -z -e 's/\n//g' -e 's/.*GGML_STATIC.*/GGML_STATIC/'`
+if [ ! x"$CMKSTATIC" = x ]; then
+	# BUILD_SHARED_LIBS
+	CMKSTATIC="-DGGML_STATIC=ON -DBUILD_SHARED_LIBS=OFF"
+fi
+CMKCOMMON="$CMKOPTTEST $CMKOPTEX $CMKSTATIC"
 # CMKOPT1 ... NONE/NOAVX/AVX/AVX2
 # CMKOPT2 ... INTELONEAPI, SYCL
 # CMKOPT3 ... BLAS SGEMM
@@ -1888,7 +1893,7 @@ get_targets()
 {
 	local XOPT XTARGETS i
 
-	xxmsg "get_targets: $*"
+	xmsg "get_targets: $*"
 
 	if [ ! -e $BUILDPATH/Makefile ]; then
 		emsg "no $BUILDPATH/Makefile"
@@ -1936,9 +1941,9 @@ get_targets()
 # chk_targets TGT VARCHKTGT
 chk_targets()
 {
-	xmsg "chk_targets: $*"
-
 	local XTGT XCHK XVALCHKTGT
+
+	xmsg "chk_targets: $*"
 
 	XTGT="$1"
 	VARCHKTGT="$2"
@@ -1961,7 +1966,9 @@ chk_targets()
 	if [ ! x"$VARCHKTGT" = x ]; then
 		eval $VARCHKTGT="$XCHK"
 		XVALCHKTGT=`eval echo '$'${VARCHKTGT}`
-		xxmsg "chk_targets: CHK:$XCHK $VARCHKTGT:$XVALCHKTGT"
+		xmsg "chk_targets: CHK:$XCHK $VARCHKTGT:$XVALCHKTGT"
+	else
+		xmsg "chk_targets: CHK:$XCHK"
 	fi
 
 	return $XCHK
@@ -2771,7 +2778,7 @@ mk_targets()
 	cmd chk_and_cp -p $XBINS $DIRNAME || die $? "can't cp $XBINS"
 }
 
-# func:do_gpt2 ver: 2024.04.30
+# func:do_gpt2 ver: 2024.07.15
 # make gpt-2-ctx, gpt-2* and move DIRNAME, do GPT2BIN
 # do_gpt2 [NOMAKE|NOEXEC]
 do_gpt2()
@@ -2784,6 +2791,14 @@ do_gpt2()
 
 	# make
 	mk_clean $DOOPT
+
+	get_targets NOMSG
+	chk_targets gpt-2-ctx CHKTGT
+	msg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no gpt-2-ctx, skip"
+		return $RET_OK
+	fi
 
 	GPT2BIN=gpt-2-ctx
 	GPT2MK=$RET_FALSE
@@ -2813,7 +2828,7 @@ do_gpt2()
 	fi
 }
 
-# func:do_gptj ver: 2024.04.30
+# func:do_gptj ver: 2024.07.15
 # make gpt-j and gpt-j-quantize and move DIRNAME, do gpt-j
 # do_gptj [NOMAKE|NOEXEC]
 do_gptj()
@@ -2824,6 +2839,14 @@ do_gptj()
 
 	DOOPT="$1"
 	DOBIN=gpt-j
+
+	get_targets NOMSG
+	chk_targets $DOBIN CHKTGT
+	xmsg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no $DOBIN, skip"
+		return $RET_OK
+	fi
 
 	if [ ! x"$DOOPT" = x"NOMAKE" ]; then
 		mk_clean $DOOPT
@@ -2846,7 +2869,7 @@ do_gptj()
 }
 
 
-# func:do_whisper ver: 2024.04.30
+# func:do_whisper ver: 2024.07.15
 # make whisper and whisper-quantize and move DIRNAME, do whisper
 # do_gptj [NOMAKE|NOEXEC]
 do_whisper()
@@ -2859,10 +2882,10 @@ do_whisper()
 	DOBIN=whisper
 
 	get_targets NOMSG
-	chk_targets $DOBIN CHK
-	xmsg "CHK:$CHK"
-	if [ $CHK -eq $RET_NO ]; then
-		emsg "do_whisper: no whisper, skip"
+	chk_targets $DOBIN CHKTGT
+	xmsg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no $DOBIN, skip"
 		return $RET_OK
 	fi
 
@@ -2893,7 +2916,7 @@ do_whisper()
 	fi
 }
 
-# func:do_gptneox ver: 2024.04.30
+# func:do_gptneox ver: 2024.07.15
 # make gpt-neox and gpt-neox-quantize and move DIRNAME, do gpt-neox
 # do_gptneox [NOMAKE|NOEXEC]
 do_gptneox()
@@ -2905,6 +2928,14 @@ do_gptneox()
 	DOOPT="$1"
 	DOBIN=gpt-neox
 	BINSRC=../examples/gpt-neox
+
+	get_targets NOMSG
+	chk_targets $DOBIN CHKTGT
+	xmsg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no $DOBIN, skip"
+		return $RET_OK
+	fi
 
 	# check source
 	if [ ! -d "$BINSRC" ]; then
@@ -2950,23 +2981,33 @@ do_gptneox()
 	return $RET_OK
 }
 
-# func:do_dollyv2 ver: 2024.04.30
+# func:do_dollyv2 ver: 2024.07.15
 # make dollyv2 and dollyv2-quantize and move DIRNAME, do dollyv2
 # do_dollyv2 [NOEXEC|NOEXEC]
 do_dollyv2()
 {
 	# in build
 
-	local DOOPT DOBIN
+	local DOOPT DOBIN BINSRC
 
 	DOOPT="$1"
 	DOBIN=dollyv2
+	BINSRC=../examples/dollyv2
 
-	# check source
-	if [ ! -d ../examples/dollyv2 ]; then
-		emsg "no dollyv2 source, skip"
+	get_targets NOMSG
+	chk_targets $DOBIN CHKTGT
+	xmsg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no $DOBIN, skip"
 		return $RET_OK
 	fi
+
+	# check source
+	if [ ! -d "$BINSRC" ]; then
+		emsg "not existed $BINSRC, skip"
+		return $RET_OK
+	fi
+	mcmd ls -ld $BINSRC
 
 	if [ ! x"$DOOPT" = x"NOMAKE" ]; then
 		mk_clean $DOOPT
@@ -2991,23 +3032,33 @@ do_dollyv2()
 	fi
 }
 
-# func:do_yolov3 ver: 2024.04.30
+# func:do_yolov3 ver: 2024.07.15
 # make yolov3-tiny and move DIRNAME, do yolov3-tiny
 # do_dollyv2 [NOEXEC|NOEXEC]
 do_yolov3()
 {
 	# in build
 
-	local DOOPT DOBIN XDTTMYOLO XOUTIMG
+	local DOOPT DOBIN BINSRC XDTTMYOLO XOUTIMG
 
 	DOOPT="$1"
 	DOBIN=yolov3-tiny
+	BINSRC=../examples/yolo
 
-	# check source
-	if [ ! -d ../examples/yolo ]; then
-		emsg "no yolo source, skip"
+	get_targets NOMSG
+	chk_targets $DOBIN CHKTGT
+	xmsg "CHKTGT:$CHKTGT"
+	if [ $CHKTGT -eq $RET_NO ]; then
+		emsg "no $DOBIN, skip"
 		return $RET_OK
 	fi
+
+	# check source
+	if [ ! -d "$BINSRC" ]; then
+		emsg "not existed $BINSRC, skip"
+		return $RET_OK
+	fi
+	mcmd ls -ld $BINSRC
 
 	if [ ! x"$DOOPT" = x"NOMAKE" ]; then
 		mk_clean $DOOPT
@@ -3068,7 +3119,7 @@ do_examples()
 	fi
 }
 
-# func:doone_cmd ver: 2024.04.21
+# func:done_cmd ver: 2024.04.21
 # set DONECMD
 # done_cmd
 done_cmd()
@@ -3320,18 +3371,19 @@ do
 		ADDSYCL=$RET_TRUE
 	fi
 
-	# blass, sgemm
+	# blas, sgemm
 	if [ $USEBLAS -eq $RET_TRUE ]; then
 		CMKOPT3="$CMKOPT3 $CMKOPTBLAS"
 	fi
 	if [ $USESGEMM -eq $RET_TRUE ]; then
-		CMKOPT3="$CMKOPT3 GGML_LLAMAFILE=ON"
+		CMKOPT3="$CMKOPT3 -DGGML_LLAMAFILE=ON"
 	fi
 
 	#CMKOPTAVX2="-DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF -DGGML_FMA=ON -DGGML_F16C=ON $CMKOPTBLAS $CMKCOMMON"
 	msg "CMKOPT1:$CMKOPT1"
 	msg "CMKOPT2:$CMKOPT2"
 	msg "CMKOPT3:$CMKOPT3"
+	msg "CMKCOMMON:$CMKCOMMON"
 	CMKOPT="$CMKOPT1 $CMKOPT2 $CMKOPT3 $CMKCOMMON"
 
 	DONECMD=$RET_FALSE
